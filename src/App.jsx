@@ -248,6 +248,21 @@ export default function App() {
       setUpdateImagePreview(null);
     }
   };
+  const handleDeleteUpdate = async (update) => {
+    if (currentProfile?.id !== update.userId) {
+      alert("คุณสามารถลบได้เฉพาะข้อความอัปเดตของตัวเองเท่านั้น");
+      return;
+    }
+
+    if (!window.confirm("คุณต้องการลบข้อความอัปเดตนี้ใช่หรือไม่?")) return;
+
+    const { error } = await supabase.from('updates').delete().eq('id', update.id);
+    if (!error) {
+      setUpdates(updates.filter(u => u.id !== update.id));
+    } else {
+      console.error("Error deleting update:", error);
+    }
+  };
 
   const handleAddInlineComment = async (taskId, text) => {
     if (!text.trim()) return;
@@ -714,23 +729,45 @@ export default function App() {
               {updates.filter(u => u.taskId === activeUpdateTaskId).length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-400 opacity-60"><MessageCircle className="w-16 h-16 mb-4 stroke-1" /><p className="text-sm font-medium">No updates yet.<br/>Log your first update here!</p></div>
               ) : (
-                updates.filter(u => u.taskId === activeUpdateTaskId).map((update) => (
-                  <div key={update.id} className="flex gap-3">
-                    <img src={getUser(update.userId).avatar} alt="Avatar" className="w-9 h-9 rounded-full shadow-sm shrink-0 border border-slate-100 mt-1 object-cover" />
-                    <div className="flex-1 min-w-0 bg-slate-50 p-4 rounded-2xl rounded-tl-none border border-slate-100 shadow-sm relative">
-                      <div className="flex justify-between items-baseline mb-2 gap-2">
-                        <span className="font-bold text-sm text-slate-800 truncate">{getUser(update.userId).name}</span>
-                        <span className="text-[10px] font-bold text-slate-400 shrink-0">{new Date(update.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      {update.text && <p className="text-sm text-slate-700 whitespace-pre-wrap mb-2">{update.text}</p>}
-                      {update.image && (
-                        <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90" onClick={() => setPreviewImage(update.image)}>
-                          <img src={update.image} alt="attached" className="w-full max-h-48 object-cover" />
+                updates.filter(u => u.taskId === activeUpdateTaskId).map((update) => {
+                  const isOwner = currentProfile?.id === update.userId;
+
+                  return (
+                    <div key={update.id} className="flex gap-3 group/item relative">
+                      <img src={getUser(update.userId).avatar} alt="Avatar" className="w-9 h-9 rounded-full shadow-sm shrink-0 border border-slate-100 mt-1 object-cover" />
+                      <div className="flex-1 min-w-0 bg-slate-50 p-4 rounded-2xl rounded-tl-none border border-slate-100 shadow-sm relative">
+                        <div className="flex justify-between items-center mb-2 gap-2">
+                          <span className="font-bold text-sm text-slate-800 truncate">{getUser(update.userId).name}</span>
+                          
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-400 shrink-0">
+                              {new Date(update.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            
+                            {/* ปุ่มถังขยะ: แสดงเฉพาะเมื่อผู้ใช้ล็อกอินตรงกับคนโพสต์ */}
+                            {isOwner && (
+                              <button 
+                                type="button"
+                                onClick={() => handleDeleteUpdate(update)}
+                                className="opacity-0 group-hover/item:opacity-100 text-slate-300 hover:text-rose-500 transition-all p-1 rounded-lg hover:bg-rose-50"
+                                title="ลบอัปเดตนี้"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      )}
+
+                        {update.text && <p className="text-sm text-slate-700 whitespace-pre-wrap mb-2">{update.text}</p>}
+                        {update.image && (
+                          <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 cursor-pointer hover:opacity-90" onClick={() => setPreviewImage(update.image)}>
+                            <img src={update.image} alt="attached" className="w-full max-h-48 object-cover" />
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
