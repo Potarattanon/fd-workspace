@@ -1,0 +1,14 @@
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* กำหนดขนาดฐานให้ใหญ่ขึ้น (จากปกติ 16px เป็น 17px หรือ 18px) */
+html {
+  font-size: 15px;
+}
+
+body {
+  font-family: 'Prompt', sans-serif;
+  background-color: #faf8f2;
+  margin: 0;
+  padding: 0;
+} 
