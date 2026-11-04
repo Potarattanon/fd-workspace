@@ -62,6 +62,7 @@ export default function App() {
 
   const [activeDescTaskId, setActiveDescTaskId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
+  const [updateToDelete, setUpdateToDelete] = useState(null);
 
   // ================= 1. โหลดข้อมูลจาก SUPABASE =================
   useEffect(() => {
@@ -248,20 +249,16 @@ export default function App() {
       setUpdateImagePreview(null);
     }
   };
-  const handleDeleteUpdate = async (update) => {
-    if (currentProfile?.id !== update.userId) {
-      alert("คุณสามารถลบได้เฉพาะข้อความอัปเดตของตัวเองเท่านั้น");
-      return;
-    }
+  const confirmDeleteUpdate = async () => {
+    if (!updateToDelete) return;
 
-    if (!window.confirm("คุณต้องการลบข้อความอัปเดตนี้ใช่หรือไม่?")) return;
-
-    const { error } = await supabase.from('updates').delete().eq('id', update.id);
+    const { error } = await supabase.from('updates').delete().eq('id', updateToDelete.id);
     if (!error) {
-      setUpdates(updates.filter(u => u.id !== update.id));
+      setUpdates(updates.filter(u => u.id !== updateToDelete.id));
     } else {
       console.error("Error deleting update:", error);
     }
+    setUpdateToDelete(null);
   };
 
   const handleAddInlineComment = async (taskId, text) => {
@@ -748,7 +745,7 @@ export default function App() {
                             {isOwner && (
                               <button 
                                 type="button"
-                                onClick={() => handleDeleteUpdate(update)}
+                                onClick={() => setUpdateToDelete(update)}
                                 className="opacity-0 group-hover/item:opacity-100 text-slate-300 hover:text-rose-500 transition-all p-1 rounded-lg hover:bg-rose-50"
                                 title="ลบอัปเดตนี้"
                               >
@@ -836,6 +833,50 @@ export default function App() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4" onClick={() => setPreviewImage(null)}>
             <button className="absolute top-6 right-6 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full" onClick={() => setPreviewImage(null)}><X className="w-8 h-8" /></button>
             <motion.img initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} src={previewImage} onClick={e => e.stopPropagation()} className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* ================= MODAL: CONFIRM DELETE UPDATE ================= */}
+      <AnimatePresence>
+        {updateToDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+            onClick={() => setUpdateToDelete(null)}
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 10 }} 
+              onClick={(e) => e.stopPropagation()} 
+              className="bg-white/95 backdrop-blur-xl border border-white p-6 rounded-3xl shadow-2xl max-w-sm w-full text-center flex flex-col items-center"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center mb-4 border border-rose-100 shadow-sm">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-extrabold text-slate-800 mb-1">ลบข้อความอัปเดต?</h3>
+              <p className="text-xs text-slate-500 font-medium mb-6 leading-relaxed">
+                คุณแน่ใจหรือไม่ว่าต้องการลบอัปเดตนี้ ข้อมูลจะถูกลบออกจากระบบทันที
+              </p>
+              <div className="flex gap-3 w-full">
+                <button 
+                  type="button" 
+                  onClick={() => setUpdateToDelete(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  type="button" 
+                  onClick={confirmDeleteUpdate}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                >
+                  ยืนยันลบ
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
