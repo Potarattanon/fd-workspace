@@ -473,6 +473,21 @@ export default function App() {
   // ================= 3. VIEW: MAIN WORKSPACE (หน้าจัดการโปรเจกต์และงานของแต่ละคน) =================
   return (
     <AuraBackground>
+      function AuraBackground({ children }) {
+  return (
+    <div style={{ position: "relative", overflow: "hidden", minHeight: "100vh", backgroundColor: "#faf8f2", isolation: "isolate" }}>
+      <style>{`
+        .beautiful-scrollbar::-webkit-scrollbar { height: 12px; width: 12px; }
+        .beautiful-scrollbar::-webkit-scrollbar-track { background: rgba(241, 245, 249, 0.4); border-radius: 10px; margin: 0 16px; }
+        .beautiful-scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.5); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+        .beautiful-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.8); border: 3px solid transparent; background-clip: padding-box; }
+      `}</style>
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.12) 18%, rgb(255,255,255) 28%, rgb(150,200,255) 68%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none" }} aria-hidden="true" />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.22) 34%, rgb(255,255,255) 66%, rgb(150,200,255) 82%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none" }} aria-hidden="true" />
+      <div style={{ position: "relative", zIndex: 1, minHeight: "100vh" }}>{children}</div>
+    </div>
+  );
+}
       <div className="min-h-screen p-4 md:p-6 lg:p-8 flex flex-col items-center">
         
         <header className="w-full max-w-[96vw] bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl px-6 py-4 flex justify-between items-center mb-6 shadow-sm z-10 sticky top-4">
@@ -792,7 +807,7 @@ export default function App() {
       {/* ================= MODAL: DESCRIPTION ================= */}
       <AnimatePresence>
         {activeDescTaskId && activeTaskForDesc && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setActiveDescTaskId(null)}>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setActiveDescTaskId(null)}>
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={(e) => e.stopPropagation()} className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                 <div className="flex items-center gap-3"><div className="p-2 bg-blue-100 text-blue-600 rounded-xl"><FileText className="w-5 h-5" /></div><div><h3 className="font-bold text-slate-800 text-lg">Task Description</h3><p className="text-xs text-slate-500">"{activeTaskForDesc.title || 'Untitled'}"</p></div></div>
@@ -843,7 +858,7 @@ export default function App() {
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }} 
-            className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/50 p-4"
             onClick={() => setUpdateToDelete(null)}
           >
             <motion.div 
