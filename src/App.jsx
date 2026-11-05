@@ -465,7 +465,7 @@ export default function App() {
                     <img src={profile.avatar} alt={profile.name} className="w-full h-full object-cover" />
                   </div>
                   <span className="text-lg font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{profile.name}</span>
-                  <span className="text-xs font-semibold text-slate-400">{profile.role}</span>
+                  <span className="text-xs font-bold text-white drop-shadow-sm">{profile.role}</span>
                 </motion.div>
               ))}
             </AnimatePresence>
