@@ -4,9 +4,9 @@ import {
   Plus, MoreHorizontal, Calendar, CalendarDays, 
   CheckCircle2, Clock, Trash2, BarChart3, Users, 
   PlayCircle, Edit2, Check, MessageCircle, X, Send, ImagePlus, FileText,
-  Briefcase, ChevronRight, Pin, Bell
+  Briefcase, ChevronRight, Pin, Bell, GripVertical
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
 
 function AuraBackground({ children }) {
   return (
@@ -128,7 +128,7 @@ export default function App() {
       const myId = overrideProfileId || currentProfile?.id || currentProfileRef.current?.id;
       const [profRes, projRes, taskRes, updRes, commRes, notifRes] = await Promise.all([
         supabase.from('profiles').select('*').order('full_name', { ascending: true }),
-        supabase.from('projects').select('*').order('created_at', { ascending: false }),
+        supabase.from('projects').select('*').order('order_index', { ascending: true }).order('created_at', { ascending: false }),
         supabase.from('tasks').select('*').order('created_at', { ascending: true }),
         supabase.from('updates').select('*').order('created_at', { ascending: true }),
         supabase.from('inline_comments').select('*').order('created_at', { ascending: true }),
@@ -136,7 +136,7 @@ export default function App() {
       ]);
 
       if (profRes.data) setProfiles(profRes.data.map(p => ({ id: p.id, name: p.full_name, avatar: p.avatar_url, role: p.role })));
-      if (projRes.data) setProjects(projRes.data.map(p => ({ id: p.id, name: p.name, description: p.description, startDate: p.start_date, endDate: p.end_date, status: p.status, workspaceOwnerId: p.workspace_owner_id })));
+      if (projRes.data) setProjects(projRes.data.map(p => ({ id: p.id, name: p.name, description: p.description, startDate: p.start_date, endDate: p.end_date, status: p.status, workspaceOwnerId: p.workspace_owner_id,orderIndex: p.order_index ?? 0})));
       if (taskRes.data) setTasks(taskRes.data.map(t => ({ id: t.id, projectId: t.project_id, title: t.title, ownerId: t.owner_id, status: t.status, dueDate: t.due_date, description: t.description, descriptionImage: t.description_image })));
       if (updRes.data) setUpdates(updRes.data.map(u => ({ id: u.id, taskId: u.task_id, userId: u.user_id, text: u.text, image: u.image_url, timestamp: u.created_at })));
       if (commRes.data) setInlineComments(commRes.data.map(c => ({ id: c.id, taskId: c.task_id, userId: c.user_id, text: c.text, timestamp: c.created_at })));
@@ -229,8 +229,11 @@ export default function App() {
     setEditingProjectId(null);
   };
 
-  const handleDeleteProject = async (id, e) => {
+const handleDeleteProject = async (id, e) => {
     e.stopPropagation();
+    const confirmed = window.confirm('⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบโปรเจกต์นี้?\n(ข้อมูลงานและอัปเดตทั้งหมดในโปรเจกต์นี้จะถูกลบถาวร)');
+    if (!confirmed) return;
+
     await supabase.from('projects').delete().eq('id', id);
     setProjects(projects.filter(p => p.id !== id));
     setTasks(tasks.filter(t => t.projectId !== id));
@@ -411,9 +414,29 @@ export default function App() {
     }
   };
 
+  // ฟังก์ชันจัดเรียงลำดับโปรเจกต์ใหม่เมื่อลากวาง + บันทึกลง Supabase
+  const handleReorderProjects = async (newOrderedList) => {
+    // 1. อัปเดต state ในเครื่องทันทีเพื่อให้การลากสลับลื่นไหล ไม่กระตุก
+    const updatedProjects = projects.map(p => {
+      const targetIndex = newOrderedList.findIndex(item => item.id === p.id);
+      return targetIndex !== -1 ? { ...p, orderIndex: targetIndex } : p;
+    }).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
+    setProjects(updatedProjects);
+
+    // 2. ส่งค่า order_index ใหม่ไปบันทึกที่ Supabase
+    const updates = newOrderedList.map((proj, idx) => 
+      supabase.from('projects').update({ order_index: idx }).eq('id', proj.id)
+    );
+    await Promise.all(updates);
+  };
+
   // COMPUTED VALUES
+// กรองเฉพาะ Workspace นั้น และเรียงลำดับตาม orderIndex
   const workspaceProjects = selectedWorkspaceOwner 
-    ? projects.filter(p => p.workspaceOwnerId === selectedWorkspaceOwner.id) 
+    ? projects
+        .filter(p => p.workspaceOwnerId === selectedWorkspaceOwner.id)
+        .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
     : [];
   
   const activeProject = workspaceProjects.find(p => p.id === activeProjectId) || workspaceProjects[0];
@@ -771,63 +794,85 @@ export default function App() {
 
         <div className="w-full max-w-[96vw] flex flex-col lg:flex-row gap-6 relative items-start">
           
-          {/* LEFT SIDEBAR: Projects */}
-          <aside className="w-full lg:w-[280px] bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-4 shadow-sm flex flex-col shrink-0 sticky top-[100px] max-h-[calc(100vh-120px)]">
+{/* LEFT SIDEBAR: Projects */}
+          <aside className="w-full lg:w-[280px] bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-4 shadow-sm flex flex-col shrink-0 sticky top-[100px] max-h-[calc(100vh-120px)] overflow-hidden">
             <div className="flex items-center justify-between mb-4 px-1">
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 tracking-tight"><CalendarDays className="w-5 h-5 text-blue-500" /> Projects</h2>
-              <button onClick={handleAddProject} className="flex items-center gap-1 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 border border-slate-200/80 shadow-sm"><Plus className="w-3.5 h-3.5" /> New</button>
+              <button onClick={handleAddProject} className="flex items-center gap-1 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 border border-slate-200/80 shadow-sm cursor-pointer"><Plus className="w-3.5 h-3.5" /> New</button>
             </div>
-            <div className="flex flex-col gap-3 overflow-y-auto pr-2 pb-4 flex-1 custom-scrollbar">
-              <AnimatePresence>
-                {workspaceProjects.length === 0 && (
-                  <motion.div initial={{opacity:0}} animate={{opacity:1}} className="text-center p-6 bg-white/40 rounded-3xl border-2 border-dashed border-slate-300 text-slate-500 font-medium text-xs mt-2 shadow-inner">
-                    <div className="flex justify-center mb-2"><PlayCircle className="w-8 h-8 text-slate-300" /></div>No projects in this workspace.
-                  </motion.div>
-                )}
-                
-                {workspaceProjects.map(project => {
-                  const isActive = project.id === activeProjectId;
-                  const isEditing = project.id === editingProjectId;
-                  const projTasks = tasks.filter(t => t.projectId === project.id);
-                  const doneProjTasks = projTasks.filter(t => t.status === 'DONE').length;
-                  const projProgress = projTasks.length === 0 ? 0 : Math.round((doneProjTasks / projTasks.length) * 100);
-                  
-                  let badge = { text: 'Not Started', color: 'bg-slate-100 text-slate-500' };
-                  if (projProgress === 100 && projTasks.length > 0) badge = { text: 'Completed', color: 'bg-emerald-100 text-emerald-600' };
-                  else if (projProgress > 0) badge = { text: 'In Progress', color: 'bg-amber-100 text-amber-600' };
 
-                  return (
-                    <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }} key={project.id} onClick={() => !isEditing && setActiveProjectId(project.id)}
-                      className={`group cursor-pointer p-4 rounded-3xl border-2 transition-all duration-300 relative ${isActive ? 'bg-white shadow-[0_4px_20px_rgba(59,130,246,0.1)] border-blue-400 ring-4 ring-blue-50' : 'bg-white/50 border-white hover:bg-white/80 hover:shadow-sm hover:border-slate-200'}`}
-                    >
-                      {isEditing ? (
-                        <div className="relative z-10" onClick={e => e.stopPropagation()}>
-                          <button onClick={() => handleSaveProject(project)} className="absolute top-0 right-0 p-1.5 bg-blue-100 text-blue-600 rounded-lg transition-all hover:bg-blue-200 hover:scale-105 z-20"><Check className="w-3.5 h-3.5" /></button>
-                          <input type="text" value={project.name} onChange={(e) => setProjects(projects.map(p => p.id === project.id ? {...p, name: e.target.value} : p))} placeholder="Project Name" className="font-extrabold text-base bg-transparent outline-none w-full border-b-2 border-transparent focus:border-blue-300 text-blue-600 pr-8 mb-2" />
-                          <textarea value={project.description} onChange={(e) => setProjects(projects.map(p => p.id === project.id ? {...p, description: e.target.value} : p))} placeholder="Add details..." rows={2} className="text-xs font-medium text-slate-500 w-full bg-transparent outline-none mb-3 border-b border-transparent focus:border-slate-300 resize-none min-h-[30px]" />
-                          <div className="flex gap-2 mt-1 pt-3 border-t border-slate-100">
-                            <input type="date" value={project.startDate} onChange={e => setProjects(projects.map(p => p.id === project.id ? {...p, startDate: e.target.value} : p))} className="bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 outline-none text-slate-600 font-medium text-[10px] w-full" />
-                            <input type="date" value={project.endDate} onChange={e => setProjects(projects.map(p => p.id === project.id ? {...p, endDate: e.target.value} : p))} className="bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 outline-none text-slate-600 font-medium text-[10px] w-full" />
-                          </div>
+            {/* Reorder.Group สำหรับรองรับการลากสลับลำดับขึ้นลง */}
+            <Reorder.Group 
+              axis="y" 
+              values={workspaceProjects} 
+              onReorder={handleReorderProjects} 
+              className="flex flex-col gap-3 overflow-y-auto overflow-x-hidden pr-1.5 pb-4 flex-1 beautiful-scrollbar"
+            >
+              {workspaceProjects.length === 0 && (
+                <div className="text-center p-6 bg-white/40 rounded-3xl border-2 border-dashed border-slate-300 text-slate-500 font-medium text-xs mt-2 shadow-inner">
+                  <div className="flex justify-center mb-2"><PlayCircle className="w-8 h-8 text-slate-300" /></div>No projects in this workspace.
+                </div>
+              )}
+              
+              {workspaceProjects.map(project => {
+                const isActive = project.id === activeProjectId;
+                const isEditing = project.id === editingProjectId;
+                const projTasks = tasks.filter(t => t.projectId === project.id);
+                const doneProjTasks = projTasks.filter(t => t.status === 'DONE').length;
+                const projProgress = projTasks.length === 0 ? 0 : Math.round((doneProjTasks / projTasks.length) * 100);
+                
+                let badge = { text: 'Not Started', color: 'bg-slate-100 text-slate-500' };
+                if (projProgress === 100 && projTasks.length > 0) badge = { text: 'Completed', color: 'bg-emerald-100 text-emerald-600' };
+                else if (projProgress > 0) badge = { text: 'In Progress', color: 'bg-amber-100 text-amber-600' };
+
+                return (
+                  <Reorder.Item 
+                    key={project.id} 
+                    value={project}
+                    whileDrag={{ scale: 1.03, boxShadow: "0 12px 30px rgba(59,130,246,0.2)" }}
+                    onClick={() => !isEditing && setActiveProjectId(project.id)}
+                    className={`group cursor-grab active:cursor-grabbing p-4 rounded-3xl border-2 transition-all duration-300 relative select-none ${isActive ? 'bg-white shadow-[0_4px_20px_rgba(59,130,246,0.1)] border-blue-400 ring-4 ring-blue-50' : 'bg-white/50 border-white hover:bg-white/80 hover:shadow-sm hover:border-slate-200'}`}
+                  >
+                    {isEditing ? (
+                      <div className="relative z-10 w-full min-w-0" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => handleSaveProject(project)} className="absolute top-0 right-0 p-1.5 bg-blue-100 text-blue-600 rounded-lg transition-all hover:bg-blue-200 hover:scale-105 z-20 cursor-pointer"><Check className="w-3.5 h-3.5" /></button>
+                        <input type="text" value={project.name} onChange={(e) => setProjects(projects.map(p => p.id === project.id ? {...p, name: e.target.value} : p))} placeholder="Project Name" className="font-extrabold text-base bg-transparent outline-none w-full border-b-2 border-transparent focus:border-blue-300 text-blue-600 pr-8 mb-2" />
+                        <textarea value={project.description} onChange={(e) => setProjects(projects.map(p => p.id === project.id ? {...p, description: e.target.value} : p))} placeholder="Add details..." rows={2} className="text-xs font-medium text-slate-500 w-full bg-transparent outline-none mb-3 border-b border-transparent focus:border-slate-300 resize-none min-h-[36px]" />
+                        
+                        <div className="grid grid-cols-2 gap-1.5 mt-1 pt-3 border-t border-slate-100 w-full min-w-0">
+                          <input type="date" value={project.startDate} onChange={e => setProjects(projects.map(p => p.id === project.id ? {...p, startDate: e.target.value} : p))} className="bg-slate-50 border border-slate-200/80 rounded-lg px-1.5 py-1 outline-none text-slate-600 font-medium text-[10px] w-full min-w-0 cursor-pointer focus:border-blue-300" />
+                          <input type="date" value={project.endDate} onChange={e => setProjects(projects.map(p => p.id === project.id ? {...p, endDate: e.target.value} : p))} className="bg-slate-50 border border-slate-200/80 rounded-lg px-1.5 py-1 outline-none text-slate-600 font-medium text-[10px] w-full min-w-0 cursor-pointer focus:border-blue-300" />
                         </div>
-                      ) : (
-                        <div className="relative z-10">
-                          <div className="absolute top-0 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-all z-20">
-                            <button onClick={(e) => { e.stopPropagation(); setEditingProjectId(project.id); }} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 shadow-sm"><Edit2 className="w-3.5 h-3.5" /></button>
-                            <button onClick={(e) => handleDeleteProject(project.id, e)} className="p-1.5 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-100 shadow-sm"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ) : (
+                      <div className="relative z-10">
+                        {/* ไอคอนจับลาก (Grip Handle) และปุ่ม Edit / Delete */}
+                        <div className="absolute top-0 right-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all z-20">
+                          <div className="p-1 text-slate-400 hover:text-slate-600" title="กดค้างเพื่อลากสลับลำดับ">
+                            <GripVertical className="w-4 h-4" />
                           </div>
-                          <div className="flex flex-col items-start gap-1 mb-2 pr-12">
-                            <h4 className={`font-extrabold text-base truncate max-w-full ${isActive ? 'text-blue-600' : 'text-slate-700'}`}>{project.name}</h4>
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badge.color}`}>{badge.text}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-3 text-slate-400 font-medium text-[11px]"><Calendar className="w-3.5 h-3.5" /> {new Date(project.startDate).toLocaleDateString('en-US', {month:'short', day:'numeric'})} - {new Date(project.endDate).toLocaleDateString('en-US', {month:'short', day:'numeric'})}</div>
+                          <button onClick={(e) => { e.stopPropagation(); setEditingProjectId(project.id); }} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 shadow-sm cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={(e) => handleDeleteProject(project.id, e)} className="p-1.5 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-100 shadow-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
+
+                        <div className="flex flex-col items-start gap-1 mb-2 pr-12">
+                          <h4 className={`font-extrabold text-base truncate max-w-full ${isActive ? 'text-blue-600' : 'text-slate-700'}`}>{project.name}</h4>
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badge.color}`}>{badge.text}</span>
+                        </div>
+
+                        {project.description && (
+                          <p className={`text-xs mt-1.5 mb-2 leading-relaxed break-words ${isActive ? 'text-slate-600 font-medium bg-blue-50/50 p-2 rounded-xl border border-blue-100/60' : 'text-slate-400 line-clamp-2'}`}>
+                            {project.description}
+                          </p>
+                        )}
+
+                        <div className="flex items-center gap-1.5 mt-2 text-slate-400 font-medium text-[11px]"><Calendar className="w-3.5 h-3.5" /> {new Date(project.startDate).toLocaleDateString('en-US', {month:'short', day:'numeric'})} - {new Date(project.endDate).toLocaleDateString('en-US', {month:'short', day:'numeric'})}</div>
+                      </div>
+                    )}
+                  </Reorder.Item>
+                );
+              })}
+            </Reorder.Group>
           </aside>
 
           {/* RIGHT MAIN AREA */}
@@ -1110,7 +1155,7 @@ export default function App() {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>  
 
       {/* ================= FULLSCREEN IMAGE PREVIEW ================= */}
       <AnimatePresence>
