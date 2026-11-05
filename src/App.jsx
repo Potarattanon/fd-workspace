@@ -1,25 +1,24 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from './supabaseClient';
 import { 
   Plus, MoreHorizontal, Calendar, CalendarDays, 
   CheckCircle2, Clock, Trash2, BarChart3, Users, 
   PlayCircle, Edit2, Check, MessageCircle, X, Send, ImagePlus, FileText,
-  Briefcase, ChevronRight, Pin
+  Briefcase, ChevronRight, Pin, Bell
 } from 'lucide-react';
-import { supabase } from './supabaseClient'; 
+import { motion, AnimatePresence } from 'framer-motion';
 
-// Aura Background Component
-function AuraBackground({ children }) {
-  return (
-    <div style={{ position: "relative", overflow: "hidden", minHeight: "100vh", backgroundColor: "#faf8f2" }}>
+      function AuraBackground({ children }) {
+    return (
+    <div style={{ position: "relative", overflow: "hidden", minHeight: "100vh", backgroundColor: "#faf8f2", isolation: "isolate" }}>
       <style>{`
         .beautiful-scrollbar::-webkit-scrollbar { height: 12px; width: 12px; }
         .beautiful-scrollbar::-webkit-scrollbar-track { background: rgba(241, 245, 249, 0.4); border-radius: 10px; margin: 0 16px; }
         .beautiful-scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.5); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
         .beautiful-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.8); border: 3px solid transparent; background-clip: padding-box; }
       `}</style>
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.12) 28%, rgb(255,255,255) 18%, rgb(150,200,255) 68%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none", transform: "translateZ(0)" }} aria-hidden="true" />
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.22) 34%, rgb(255,255,255) 66%, rgb(150,200,255) 82%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none", transform: "translateZ(0)" }} aria-hidden="true" />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.12) 18%, rgb(255,255,255) 28%, rgb(150,200,255) 68%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none" }} aria-hidden="true" />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.22) 34%, rgb(255,255,255) 66%, rgb(150,200,255) 82%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none" }} aria-hidden="true" />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100vh" }}>{children}</div>
     </div>
   );
@@ -63,10 +62,78 @@ export default function App() {
   const [activeDescTaskId, setActiveDescTaskId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [updateToDelete, setUpdateToDelete] = useState(null);
+  // --- REALTIME & TOAST NOTIFICATION STATE ---
+  const [toasts, setToasts] = useState([]);
+  const currentProfileRef = useRef(currentProfile);
+  const projectsRef = useRef(projects);
+  const profilesRef = useRef(profiles);
+
+  useEffect(() => { currentProfileRef.current = currentProfile; }, [currentProfile]);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+  useEffect(() => { profilesRef.current = profiles; }, [profiles]);
+
+  const addToast = (title, message) => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, title, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 6000);
+  };
 
   // ================= 1. โหลดข้อมูลจาก SUPABASE =================
-  useEffect(() => {
+useEffect(() => {
     fetchData();
+
+    // ดักจับการเปลี่ยนแปลงในฐานข้อมูลแบบ Realtime
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' },
+        (payload) => {
+          // 1. ซิงค์ดึงข้อมูลใหม่ทันทีที่มีการเปลี่ยนแปลง
+          fetchData();
+
+          // 2. เด้งการแจ้งเตือนเฉพาะเมื่อมีคนอื่นเข้ามาสร้างข้อมูลใหม่ (INSERT)
+          if (payload.eventType === 'INSERT') {
+            const myId = currentProfileRef.current?.id;
+            if (!myId) return;
+
+            // มีคนสร้าง Task ใน Workspace ของเรา
+            if (payload.table === 'tasks') {
+              const task = payload.new;
+              const project = projectsRef.current.find(p => p.id === task.project_id);
+              if (project && project.workspaceOwnerId === myId && task.owner_id !== myId) {
+                const author = profilesRef.current.find(p => p.id === task.owner_id)?.name || 'สมาชิกในทีม';
+                addToast('Task ใหม่ใน Workspace คุณ', `${author} ได้สร้างงาน: "${task.title || 'Untitled'}"`);
+              }
+            }
+
+            // มีคนส่ง Update ข้อความหรือรูปภาพใน Task
+            if (payload.table === 'updates') {
+              const upd = payload.new;
+              if (upd.user_id !== myId) {
+                const author = profilesRef.current.find(p => p.id === upd.user_id)?.name || 'สมาชิกในทีม';
+                addToast('มีการอัปเดตงาน', `${author} ได้ส่งข้อมูลอัปเดตใหม่ใน Task`);
+              }
+            }
+
+            // มีคนเขียนความคิดเห็นในช่อง Comment ของตาราง
+            if (payload.table === 'inline_comments') {
+              const comm = payload.new;
+              if (comm.user_id !== myId) {
+                const author = profilesRef.current.find(p => p.id === comm.user_id)?.name || 'สมาชิกในทีม';
+                addToast('ความคิดเห็นใหม่', `${author}: "${comm.text}"`);
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchData = async () => {
@@ -473,21 +540,6 @@ export default function App() {
   // ================= 3. VIEW: MAIN WORKSPACE (หน้าจัดการโปรเจกต์และงานของแต่ละคน) =================
   return (
     <AuraBackground>
-      function AuraBackground({ children }) {
-  return (
-    <div style={{ position: "relative", overflow: "hidden", minHeight: "100vh", backgroundColor: "#faf8f2", isolation: "isolate" }}>
-      <style>{`
-        .beautiful-scrollbar::-webkit-scrollbar { height: 12px; width: 12px; }
-        .beautiful-scrollbar::-webkit-scrollbar-track { background: rgba(241, 245, 249, 0.4); border-radius: 10px; margin: 0 16px; }
-        .beautiful-scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.5); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
-        .beautiful-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.8); border: 3px solid transparent; background-clip: padding-box; }
-      `}</style>
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.12) 18%, rgb(255,255,255) 28%, rgb(150,200,255) 68%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none" }} aria-hidden="true" />
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.22) 34%, rgb(255,255,255) 66%, rgb(150,200,255) 82%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none" }} aria-hidden="true" />
-      <div style={{ position: "relative", zIndex: 1, minHeight: "100vh" }}>{children}</div>
-    </div>
-  );
-}
       <div className="min-h-screen p-4 md:p-6 lg:p-8 flex flex-col items-center">
         
         <header className="w-full max-w-[96vw] bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl px-6 py-4 flex justify-between items-center mb-6 shadow-sm z-10 sticky top-4">
@@ -895,6 +947,37 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ================= TOAST NOTIFICATIONS ================= */}
+      <div className="fixed top-6 right-6 z-[130] flex flex-col gap-3 pointer-events-none max-w-sm w-full">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+              className="pointer-events-auto bg-white/95 backdrop-blur-xl border border-blue-200/80 shadow-[0_10px_30px_rgba(59,130,246,0.2)] p-4 rounded-2xl flex items-start gap-3 relative overflow-hidden"
+            >
+              <div className="p-2 bg-blue-500 text-white rounded-xl shadow-sm shrink-0 mt-0.5">
+                <Bell className="w-4 h-4 animate-bounce" />
+              </div>
+              <div className="flex-1 min-w-0 pr-4">
+                <h4 className="text-xs font-extrabold text-slate-800 tracking-tight mb-0.5">{toast.title}</h4>
+                <p className="text-xs text-slate-600 font-medium truncate">{toast.message}</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))} 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-400 to-indigo-500"></div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </AuraBackground>
   );
 }
