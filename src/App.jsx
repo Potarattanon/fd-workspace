@@ -64,6 +64,9 @@ export default function App() {
   const [updateToDelete, setUpdateToDelete] = useState(null);
   // --- REALTIME & TOAST NOTIFICATION STATE ---
   const [toasts, setToasts] = useState([]);
+  // --- NOTIFICATION CENTER STATE ---
+  const [notifications, setNotifications] = useState([]);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
   const currentProfileRef = useRef(currentProfile);
   const projectsRef = useRef(projects);
   const profilesRef = useRef(profiles);
@@ -80,8 +83,8 @@ export default function App() {
     }, 6000);
   };
 
-  // ================= 1. โหลดข้อมูลจาก SUPABASE =================
-useEffect(() => {
+ // ================= 1. โหลดข้อมูลจาก SUPABASE =================
+  useEffect(() => {
     fetchData();
 
     // ดักจับการเปลี่ยนแปลงในฐานข้อมูลแบบ Realtime
@@ -94,11 +97,21 @@ useEffect(() => {
           // 1. ซิงค์ดึงข้อมูลใหม่ทันทีที่มีการเปลี่ยนแปลง
           fetchData();
 
-          // 2. เด้งการแจ้งเตือนเฉพาะเมื่อมีคนอื่นเข้ามาสร้างข้อมูลใหม่ (INSERT)
-          if (payload.eventType === 'INSERT') {
-            const myId = currentProfileRef.current?.id;
-            if (!myId) return;
+          const myId = currentProfileRef.current?.id;
+          if (!myId) return;
 
+          // ดักจับแจ้งเตือนเฉพาะของโปรไฟล์ปัจจุบัน
+          if (payload.table === 'notifications' && payload.new?.user_id === myId) {
+            if (payload.eventType === 'INSERT') {
+              setNotifications(prev => [payload.new, ...prev.filter(n => n.id !== payload.new.id)]);
+              addToast(payload.new.title, payload.new.message);
+            } else if (payload.eventType === 'UPDATE') {
+              setNotifications(prev => prev.map(n => n.id === payload.new.id ? payload.new : n));
+            }
+          }
+
+          // 2. เด้งการแจ้งเตือน Toast เมื่อมีคนอื่นเข้ามาสร้างข้อมูลใหม่ (INSERT)
+          if (payload.eventType === 'INSERT') {
             // มีคนสร้าง Task ใน Workspace ของเรา
             if (payload.table === 'tasks') {
               const task = payload.new;
@@ -136,14 +149,23 @@ useEffect(() => {
     };
   }, []);
 
+  // เมื่อมีการสลับโปรไฟล์ ให้ดึงข้อมูลแจ้งเตือนของโปรไฟล์นั้นใหม่ทันที
+  useEffect(() => {
+    if (currentProfile?.id) {
+      fetchData();
+    }
+  }, [currentProfile?.id]);
+
   const fetchData = async () => {
     try {
-      const [profRes, projRes, taskRes, updRes, commRes] = await Promise.all([
+      const myId = currentProfileRef.current?.id;
+      const [profRes, projRes, taskRes, updRes, commRes, notifRes] = await Promise.all([
         supabase.from('profiles').select('*').order('full_name', { ascending: true }),
         supabase.from('projects').select('*').order('created_at', { ascending: false }),
         supabase.from('tasks').select('*').order('created_at', { ascending: true }),
         supabase.from('updates').select('*').order('created_at', { ascending: true }),
-        supabase.from('inline_comments').select('*').order('created_at', { ascending: true })
+        supabase.from('inline_comments').select('*').order('created_at', { ascending: true }),
+        supabase.from('notifications').select('*').order('created_at', { ascending: false })
       ]);
 
       if (profRes.data) setProfiles(profRes.data.map(p => ({ id: p.id, name: p.full_name, avatar: p.avatar_url, role: p.role })));
@@ -151,6 +173,11 @@ useEffect(() => {
       if (taskRes.data) setTasks(taskRes.data.map(t => ({ id: t.id, projectId: t.project_id, title: t.title, ownerId: t.owner_id, status: t.status, dueDate: t.due_date, description: t.description, descriptionImage: t.description_image })));
       if (updRes.data) setUpdates(updRes.data.map(u => ({ id: u.id, taskId: u.task_id, userId: u.user_id, text: u.text, image: u.image_url, timestamp: u.created_at })));
       if (commRes.data) setInlineComments(commRes.data.map(c => ({ id: c.id, taskId: c.task_id, userId: c.user_id, text: c.text, timestamp: c.created_at })));
+      
+      // ดึงแจ้งเตือนและกรองเฉพาะของโปรไฟล์ปัจจุบัน
+      if (notifRes.data) {
+        setNotifications(myId ? notifRes.data.filter(n => n.user_id === myId) : notifRes.data);
+      }
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
@@ -311,6 +338,19 @@ useEffect(() => {
     if (data) {
       const u = data[0];
       setUpdates([...updates, { id: u.id, taskId: u.task_id, userId: u.user_id, text: u.text, image: u.image_url, timestamp: u.created_at }]);
+      // ยิงแจ้งเตือนหาเจ้าของงาน/เจ้าของ Workspace
+      const targetUserId = activeTaskForUpdate?.ownerId || selectedWorkspaceId;
+      if (targetUserId && targetUserId !== currentProfile.id) {
+        await supabase.from('notifications').insert([{
+          user_id: targetUserId,
+          actor_id: currentProfile.id,
+          title: 'มีการอัปเดตงาน',
+          message: `${currentProfile.name}: "${updateInput.trim() || 'แนบรูปภาพใหม่'}"`,
+          workspace_id: selectedWorkspaceId,
+          project_id: selectedProjectId,
+          task_id: activeUpdateTaskId
+        }]);
+      }
       setUpdateInput('');
       setUpdateImageFile(null);
       setUpdateImagePreview(null);
@@ -326,6 +366,20 @@ useEffect(() => {
       console.error("Error deleting update:", error);
     }
     setUpdateToDelete(null);
+  };
+  // ฟังก์ชันเมื่อคลิกที่รายการแจ้งเตือน: มาร์กว่าอ่านแล้ว + นำทางไปหน้านั้นทันที
+  const handleNotificationClick = async (notif) => {
+    if (!notif.is_read) {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', notif.id);
+      setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+    }
+
+    setIsNotifOpen(false);
+
+    // นำทางไปยัง Workspace -> Project -> เปิดแถบ Task Updates นั้น
+    if (notif.workspace_id) setSelectedWorkspaceId(notif.workspace_id);
+    if (notif.project_id) setSelectedProjectId(notif.project_id);
+    if (notif.task_id) setActiveUpdateTaskId(notif.task_id);
   };
 
   const handleAddInlineComment = async (taskId, text) => {
@@ -463,6 +517,78 @@ useEffect(() => {
                 <img src={currentProfile.avatar} alt="Avatar" className="w-8 h-8 rounded-full shadow-sm object-cover" />
                 <span className="font-bold text-slate-700 pr-2">{currentProfile.name}</span>
               </div>
+              {/* NOTIFICATION BELL & DROPDOWN */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsNotifOpen(!isNotifOpen)}
+              className="relative p-2.5 rounded-2xl bg-white/80 hover:bg-white text-slate-600 border border-slate-200/80 shadow-sm transition-all cursor-pointer"
+            >
+              <Bell className="w-4 h-4" />
+              {/* แสดงตัวเลขสีแดงเมื่อมีรายการที่ยังไม่ได้อ่าน */}
+              {notifications.filter(n => !n.is_read).length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-md animate-pulse">
+                  {notifications.filter(n => !n.is_read).length}
+                </span>
+              )}
+            </button>
+
+            {/* หน้าต่างเมนูแจ้งเตือน */}
+            <AnimatePresence>
+              {isNotifOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute right-0 mt-3 w-80 sm:w-96 bg-white/95 backdrop-blur-2xl border border-slate-200/90 rounded-3xl shadow-2xl z-[120] overflow-hidden flex flex-col"
+                >
+                  <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <span className="font-extrabold text-sm text-slate-800 flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-blue-500" /> การแจ้งเตือน
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-bold">
+                      ค้าง {notifications.filter(n => !n.is_read).length} รายการ
+                    </span>
+                  </div>
+
+                  <div className="max-h-[380px] overflow-y-auto beautiful-scrollbar p-2 flex flex-col gap-1.5">
+                    {notifications.length === 0 ? (
+                      <div className="py-10 text-center text-slate-400 text-xs font-medium">
+                        ยังไม่มีการแจ้งเตือน
+                      </div>
+                    ) : (
+                      notifications.map((notif) => {
+                        const actor = getUser(notif.actor_id);
+                        return (
+                          <div
+                            key={notif.id}
+                            onClick={() => handleNotificationClick(notif)}
+                            className={`p-3 rounded-2xl flex items-start gap-3 cursor-pointer transition-all ${
+                              notif.is_read ? 'opacity-60 hover:opacity-100 bg-white hover:bg-slate-50' : 'bg-blue-50/60 border border-blue-100/80 hover:bg-blue-50'
+                            }`}
+                          >
+                            <img src={actor?.avatar} alt="Avatar" className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5 border border-white shadow-sm" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center mb-0.5">
+                                <h5 className="font-bold text-xs text-slate-800 truncate">{notif.title}</h5>
+                                <span className="text-[9px] text-slate-400 shrink-0 font-medium">
+                                  {new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{notif.message}</p>
+                            </div>
+                            {!notif.is_read && (
+                              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-2"></span>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
               <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors bg-white/50 px-4 py-2.5 rounded-full border border-slate-200 hover:bg-white">
                 <Users className="w-4 h-4" /> Switch Profile
               </button>
@@ -555,6 +681,77 @@ useEffect(() => {
               <img src={currentProfile.avatar} alt="Avatar" className="w-8 h-8 rounded-full bg-blue-100 object-cover" />
               <span className="font-bold text-slate-700 pr-2">{currentProfile.name}</span>
             </div>
+            {/* NOTIFICATION BELL & DROPDOWN */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsNotifOpen(!isNotifOpen)}
+              className="relative p-2.5 rounded-2xl bg-white/80 hover:bg-white text-slate-600 border border-slate-200/80 shadow-sm transition-all cursor-pointer"
+            >
+              <Bell className="w-4 h-4" />
+              {notifications.filter(n => !n.is_read).length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-md animate-pulse">
+                  {notifications.filter(n => !n.is_read).length}
+                </span>
+              )}
+            </button>
+
+            {/* หน้าต่างเมนูแจ้งเตือน */}
+            <AnimatePresence>
+              {isNotifOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute right-0 mt-3 w-80 sm:w-96 bg-white/95 backdrop-blur-2xl border border-slate-200/90 rounded-3xl shadow-2xl z-[120] overflow-hidden flex flex-col"
+                >
+                  <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <span className="font-extrabold text-sm text-slate-800 flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-blue-500" /> การแจ้งเตือน
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-bold">
+                      ค้าง {notifications.filter(n => !n.is_read).length} รายการ
+                    </span>
+                  </div>
+
+                  <div className="max-h-[380px] overflow-y-auto beautiful-scrollbar p-2 flex flex-col gap-1.5">
+                    {notifications.length === 0 ? (
+                      <div className="py-10 text-center text-slate-400 text-xs font-medium">
+                        ยังไม่มีการแจ้งเตือน
+                      </div>
+                    ) : (
+                      notifications.map((notif) => {
+                        const actor = getUser(notif.actor_id);
+                        return (
+                          <div
+                            key={notif.id}
+                            onClick={() => handleNotificationClick(notif)}
+                            className={`p-3 rounded-2xl flex items-start gap-3 cursor-pointer transition-all ${
+                              notif.is_read ? 'opacity-60 hover:opacity-100 bg-white hover:bg-slate-50' : 'bg-blue-50/60 border border-blue-100/80 hover:bg-blue-50'
+                            }`}
+                          >
+                            <img src={actor?.avatar} alt="Avatar" className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5 border border-white shadow-sm" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center mb-0.5">
+                                <h5 className="font-bold text-xs text-slate-800 truncate">{notif.title}</h5>
+                                <span className="text-[9px] text-slate-400 shrink-0 font-medium">
+                                  {new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{notif.message}</p>
+                            </div>
+                            {!notif.is_read && (
+                              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-2"></span>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
             <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors bg-white/50 px-4 py-2.5 rounded-full border border-slate-200 hover:bg-white"><Users className="w-4 h-4" /> Switch</button>
           </div>
         </header>
