@@ -878,7 +878,7 @@ export default function App() {
                           <th className="py-3 px-4 w-28 font-medium border-r border-[#3b4050] text-center bg-[#2b2f3e]">Owner</th>
                           <th className="py-3 px-4 w-40 font-medium border-r border-[#3b4050] text-center bg-[#2b2f3e]">Status</th>
                           <th className="py-3 px-4 w-40 font-medium border-r border-[#3b4050] bg-[#2b2f3e]">Due Date</th>
-                          <th className="py-3 px-4 font-medium border-r border-[#3b4050] min-w-[200px] w-64 bg-[#2b2f3e]">Description</th>
+                          <th className="py-3 px-4 font-medium border-r border-[#3b4050] w-[240px] min-w-[240px] max-w-[240px] bg-[#2b2f3e]">Description</th>
                           <th className="py-3 px-4 font-medium border-r border-[#3b4050] min-w-[250px] bg-[#2b2f3e]">Comment</th>
                           <th className="py-3 px-2 w-10 font-medium text-center bg-[#2b2f3e]"></th>
                         </tr>
@@ -923,11 +923,23 @@ export default function App() {
                                   <input type="date" value={task.dueDate} onChange={e => { handleUpdateTaskState(task.id, 'dueDate', e.target.value); syncTaskToDB(task.id, 'dueDate', e.target.value); }} className={`bg-transparent outline-none font-medium text-sm cursor-pointer w-full transition-all ${task.status === 'DONE' ? 'text-slate-400 line-through opacity-70' : 'text-slate-600'}`} />
                                 </td>
 
-                                <td className="py-2.5 px-4 align-top border-r border-slate-200 cursor-pointer" onClick={() => setActiveDescTaskId(task.id)}>
-                                  <div className="flex items-start justify-between gap-2 h-full hover:bg-slate-100/50 p-1 -m-1 rounded-lg transition-colors border border-transparent hover:border-slate-200">
-                                    <div className="flex flex-col gap-1 w-full overflow-hidden">
-                                      {task.description ? <p className="text-xs text-slate-600 truncate">{task.description}</p> : <p className="text-xs text-slate-400 italic">Click to add description...</p>}
-                                      {task.descriptionImage && <div className="flex items-center gap-1 text-[10px] text-blue-500 font-bold bg-blue-50 w-max px-2 py-0.5 rounded-full border border-blue-100"><ImagePlus className="w-3 h-3" /> Image attached</div>}
+                                <td className="py-2.5 px-4 align-top border-r border-slate-200 cursor-pointer w-[240px] min-w-[240px] max-w-[240px]" onClick={() => setActiveDescTaskId(task.id)}>
+                                  <div className="flex items-start justify-between gap-2 h-full hover:bg-slate-100/50 p-1 -m-1 rounded-lg transition-colors border border-transparent hover:border-slate-200 overflow-hidden">
+                                    <div className="flex flex-col gap-1 w-full min-w-0 overflow-hidden">
+                                      {task.description ? (
+                                        <p className="text-xs text-slate-600 truncate" title={task.description}>
+                                          {task.description}
+                                        </p>
+                                      ) : (
+                                        <p className="text-xs text-slate-400 italic truncate">
+                                          Click to add description...
+                                        </p>
+                                      )}
+                                      {task.descriptionImage && (
+                                        <div className="flex items-center gap-1 text-[10px] text-blue-500 font-bold bg-blue-50 w-max px-2 py-0.5 rounded-full border border-blue-100 shrink-0">
+                                          <ImagePlus className="w-3 h-3" /> Image attached
+                                        </div>
+                                      )}
                                     </div>
                                     <FileText className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
                                   </div>
