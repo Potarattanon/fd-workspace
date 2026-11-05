@@ -17,8 +17,18 @@ function AuraBackground({ children }) {
         .beautiful-scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.5); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
         .beautiful-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.8); border: 3px solid transparent; background-clip: padding-box; }
       `}</style>
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.12) 18%, rgb(255,255,255) 28%, rgb(150,200,255) 68%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none" }} aria-hidden="true" />
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 0%, rgba(200,230,255,0.22) 34%, rgb(255,255,255) 66%, rgb(150,200,255) 82%, rgb(100,130,200) 100%)", mixBlendMode: "multiply", filter: "blur(130px)", pointerEvents: "none" }} aria-hidden="true" />
+      
+      {/* พื้นหลังไล่เฉดสีเนียนตา ไร้ภาระ GPU Blur ไม่เกิดรอยต่อหรือเส้นกะพริบ 100% */}
+      <div 
+        style={{ 
+          position: "absolute", 
+          inset: 0, 
+          background: "radial-gradient(circle at 50% -10%, rgba(190, 225, 255, 0.45) 0%, rgba(250, 248, 242, 0) 60%), linear-gradient(180deg, #faf8f2 0%, #eef6ff 38%, #d9ebff 72%, #b8dbff 100%)", 
+          pointerEvents: "none" 
+        }} 
+        aria-hidden="true" 
+      />
+      
       <div style={{ position: "relative", zIndex: 1, minHeight: "100vh" }}>{children}</div>
     </div>
   );
