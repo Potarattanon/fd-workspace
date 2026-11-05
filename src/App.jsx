@@ -62,6 +62,7 @@ export default function App() {
   const [activeDescTaskId, setActiveDescTaskId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [updateToDelete, setUpdateToDelete] = useState(null);
+  const [projectToDelete, setProjectToDelete] = useState(null);
 
   // NOTIFICATION & REALTIME STATE
   const [toasts, setToasts] = useState([]);
@@ -229,15 +230,20 @@ export default function App() {
     setEditingProjectId(null);
   };
 
-const handleDeleteProject = async (id, e) => {
-    e.stopPropagation();
-    const confirmed = window.confirm('⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบโปรเจกต์นี้?\n(ข้อมูลงานและอัปเดตทั้งหมดในโปรเจกต์นี้จะถูกลบถาวร)');
-    if (!confirmed) return;
+// ฟังก์ชันยืนยันการลบโปรเจกต์จาก Custom Modal
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    const id = projectToDelete.id;
 
-    await supabase.from('projects').delete().eq('id', id);
-    setProjects(projects.filter(p => p.id !== id));
-    setTasks(tasks.filter(t => t.projectId !== id));
-    if (activeProjectId === id) setActiveProjectId(null);
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    if (!error) {
+      setProjects(prev => prev.filter(p => p.id !== id));
+      setTasks(prev => prev.filter(t => t.projectId !== id));
+      if (activeProjectId === id) setActiveProjectId(null);
+    } else {
+      console.error("Error deleting project:", error);
+    }
+    setProjectToDelete(null);
   };
 
   const handleAddTask = async () => {
@@ -801,7 +807,7 @@ const handleDeleteProject = async (id, e) => {
               <button onClick={handleAddProject} className="flex items-center gap-1 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 border border-slate-200/80 shadow-sm cursor-pointer"><Plus className="w-3.5 h-3.5" /> New</button>
             </div>
 
-            {/* Reorder.Group สำหรับรองรับการลากสลับลำดับขึ้นลง */}
+            {/* Reorder.Group สำหรับจัดเรียง */}
             <Reorder.Group 
               axis="y" 
               values={workspaceProjects} 
@@ -829,9 +835,10 @@ const handleDeleteProject = async (id, e) => {
                   <Reorder.Item 
                     key={project.id} 
                     value={project}
-                    whileDrag={{ scale: 1.03, boxShadow: "0 12px 30px rgba(59,130,246,0.2)" }}
+                    whileDrag={{ scale: 1.02, zIndex: 50, boxShadow: "0 16px 32px rgba(59,130,246,0.2)" }}
                     onClick={() => !isEditing && setActiveProjectId(project.id)}
-                    className={`group cursor-grab active:cursor-grabbing p-4 rounded-3xl border-2 transition-all duration-300 relative select-none ${isActive ? 'bg-white shadow-[0_4px_20px_rgba(59,130,246,0.1)] border-blue-400 ring-4 ring-blue-50' : 'bg-white/50 border-white hover:bg-white/80 hover:shadow-sm hover:border-slate-200'}`}
+                    /* ใช้ transition-colors แทน transition-all เพื่อไม่ให้ตีกับระบบลาก */
+                    className={`group cursor-grab active:cursor-grabbing p-4 rounded-3xl border-2 transition-colors duration-200 relative select-none ${isActive ? 'bg-white shadow-[0_4px_20px_rgba(59,130,246,0.1)] border-blue-400 ring-4 ring-blue-50' : 'bg-white/50 border-white hover:bg-white/80 hover:shadow-sm hover:border-slate-200'}`}
                   >
                     {isEditing ? (
                       <div className="relative z-10 w-full min-w-0" onClick={e => e.stopPropagation()}>
@@ -846,13 +853,13 @@ const handleDeleteProject = async (id, e) => {
                       </div>
                     ) : (
                       <div className="relative z-10">
-                        {/* ไอคอนจับลาก (Grip Handle) และปุ่ม Edit / Delete */}
-                        <div className="absolute top-0 right-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all z-20">
+                        {/* ปุ่มควบคุม */}
+                        <div className="absolute top-0 right-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                           <div className="p-1 text-slate-400 hover:text-slate-600" title="กดค้างเพื่อลากสลับลำดับ">
                             <GripVertical className="w-4 h-4" />
                           </div>
                           <button onClick={(e) => { e.stopPropagation(); setEditingProjectId(project.id); }} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 shadow-sm cursor-pointer"><Edit2 className="w-3.5 h-3.5" /></button>
-                          <button onClick={(e) => handleDeleteProject(project.id, e)} className="p-1.5 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-100 shadow-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={(e) => { e.stopPropagation(); setProjectToDelete(project); }} className="p-1.5 bg-rose-50 text-rose-500 rounded-lg hover:bg-rose-100 shadow-sm cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
 
                         <div className="flex flex-col items-start gap-1 mb-2 pr-12">
@@ -860,8 +867,9 @@ const handleDeleteProject = async (id, e) => {
                           <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badge.color}`}>{badge.text}</span>
                         </div>
 
-                        {project.description && (
-                          <p className={`text-xs mt-1.5 mb-2 leading-relaxed break-words ${isActive ? 'text-slate-600 font-medium bg-blue-50/50 p-2 rounded-xl border border-blue-100/60' : 'text-slate-400 line-clamp-2'}`}>
+                        {/* แสดงคำอธิบายเฉพาะตอนคลิกดู (isActive) แบบตัวหนังสือเรียบๆ ไม่มีกรอบ */}
+                        {isActive && project.description && (
+                          <p className="text-xs text-slate-500 font-normal mt-1.5 mb-2 leading-relaxed break-words">
                             {project.description}
                           </p>
                         )}
@@ -1166,7 +1174,51 @@ const handleDeleteProject = async (id, e) => {
           </motion.div>
         )}
       </AnimatePresence>
-
+        {/* ================= MODAL: CONFIRM DELETE PROJECT ================= */}
+      <AnimatePresence>
+        {projectToDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/50 p-4"
+            onClick={() => setProjectToDelete(null)}
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 10 }} 
+              onClick={(e) => e.stopPropagation()} 
+              className="bg-white/95 backdrop-blur-xl border border-white p-6 rounded-3xl shadow-2xl max-w-sm w-full text-center flex flex-col items-center"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center mb-4 border border-rose-100 shadow-sm">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-extrabold text-slate-800 mb-1">ลบโปรเจกต์?</h3>
+              <p className="text-xs text-slate-500 font-medium mb-6 leading-relaxed">
+                คุณแน่ใจหรือไม่ว่าต้องการลบโปรเจกต์ <span className="font-bold text-slate-700">"{projectToDelete.name}"</span>? ข้อมูลงานและอัปเดตทั้งหมดในโปรเจกต์นี้จะถูกลบถาวร
+              </p>
+              <div className="flex gap-3 w-full">
+                <button 
+                  type="button" 
+                  onClick={() => setProjectToDelete(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button 
+                  type="button" 
+                  onClick={confirmDeleteProject}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                >
+                  ยืนยันลบ
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
       {/* ================= MODAL: CONFIRM DELETE UPDATE ================= */}
       <AnimatePresence>
         {updateToDelete && (
